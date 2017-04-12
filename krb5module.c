@@ -3028,6 +3028,84 @@ CCache_init_creds_keytab(PyObject *unself __UNUSED, PyObject *args, PyObject *kw
   return Py_None;
 } /* KrbV.CCache.init_creds_keytab() */
 
+PyDoc_STRVAR(CCache_init_creds_passwd__doc__,
+"init_creds_passwd(passwd, principal) -> NULL, None, or krb error code       \n\
+                                                                             \n\
+:Summary : Get a server's initial credentials, using password.               \n\
+                                                                             \n\
+:Parameters :                                                                \n\
+    password                                                                 \n\
+    principal                                                                \n\
+                                                                             \n\
+:Return value :                                                              \n\
+    None means everything worked.                                            \n\
+    NULL means the principal name was invalid.                               \n\
+    nonzero integer means the TGT-request failed somehow.                    \n\
+                                                                             \n\
+:See also :                                                                  \n\
+    get_credentials() - for application-clients that need to request & use   \n\
+    tickets.                                                                 \n\
+");
+static PyObject*
+CCache_init_creds_passwd(PyObject *unself __UNUSED, PyObject *args, PyObject *kw)
+{
+  static const char *kwlist[] = {"self", "passwd", "principal", NULL};
+  const char *passwd_char = NULL;
+  PyObject *self, *passwd = NULL, *principal = NULL, *conobj = NULL, *tmp;
+  krb5_ccache ccache = NULL;
+  krb5_context ctx = NULL;
+  krb5_principal princ = NULL;
+  krb5_error_code rc;
+  krb5_creds my_creds;
+  krb5_get_init_creds_opt options;
+
+  if(!PyArg_ParseTupleAndKeywords(args, kw, "OS|O:init_creds_keytab", (char **)kwlist,
+				  &self, &passwd, &principal))
+    return NULL;
+
+  conobj = tmp = PyObject_GetAttrString(self, "context");
+  if(tmp)
+    {
+      tmp = PyObject_GetAttrString(tmp, "_ctx");
+      if(tmp)
+	ctx = PyCObject_AsVoidPtr(tmp);
+    }
+  tmp = PyObject_GetAttrString(self, "_ccache");
+  if(tmp)
+    ccache = PyCObject_AsVoidPtr(tmp);
+  passwd_char = PyString_AsString(passwd);
+  if(!passwd_char)
+	return NULL;
+  if(principal == Py_None)
+    principal = NULL;
+  if(!principal)
+    {
+      tmp = Py_BuildValue("(O)", self);
+      principal = CCache_principal(NULL, tmp, NULL);
+      Py_DECREF(tmp);
+    }
+  tmp = PyObject_GetAttrString(principal, "_princ");
+  if(tmp)
+    princ = PyCObject_AsVoidPtr(tmp);
+  else
+    return NULL;
+  memset(&my_creds, 0, sizeof(my_creds));
+
+  krb5_get_init_creds_opt_init(&options);
+  rc = krb5_get_init_creds_password(ctx, &my_creds, princ, passwd_char, NULL, NULL, 0, NULL, &options);
+  if(rc)
+    return pk_error(rc);
+
+  rc = krb5_cc_store_cred(ctx, ccache, &my_creds);
+  if(rc)
+    return pk_error(rc);
+
+  krb5_free_cred_contents(ctx, &my_creds);
+
+  Py_INCREF(Py_None);
+  return Py_None;
+} /* KrbV.CCache.init_creds_passwd() */
+
 PyDoc_STRVAR(CCache_initialize__doc__,
 "initialize(Principal) ->  None, NULL, or krb error code.                    \n\
                                                                              \n\
@@ -3276,6 +3354,7 @@ static PyMethodDef ccache_methods[] = {
   {"principal",        (PyCFunction)CCache_principal,        METH_VARARGS|METH_KEYWORDS, CCache_principal__doc__},
   {"get_credentials",  (PyCFunction)CCache_get_credentials,  METH_VARARGS|METH_KEYWORDS, CCache_get_credentials__doc__},
   {"init_creds_keytab",(PyCFunction)CCache_init_creds_keytab,METH_VARARGS|METH_KEYWORDS, CCache_init_creds_keytab__doc__},
+  {"init_creds_passwd",(PyCFunction)CCache_init_creds_passwd,METH_VARARGS|METH_KEYWORDS, CCache_init_creds_passwd__doc__}, //TODO: No doc
   {"init",             (PyCFunction)CCache_initialize,       METH_VARARGS|METH_KEYWORDS, CCache_initialize__doc__},
   {NULL, NULL, 0, NULL}
 };
